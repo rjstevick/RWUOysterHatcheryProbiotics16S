@@ -1,0 +1,968 @@
+---
+title: Figures for Bacterial Community Dynamics in an Oyster Hatchery in Response
+  to Probiotic Treatment
+author: 'Rebecca Stevick, contact: rstevick@uri.edu'
+date: "Finalized March 12, 2019"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, echo=TRUE, message=FALSE, results='hide'}
+#load libraries
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(openxlsx)
+library(vegan)
+library(phyloseq)
+library(Scale)
+
+```
+
+# Figure 1. Percent Abundances
+
+This figure uses the abundance data by Phyla to plot the number of reads per sample and the percent abundance of phyla per sample. First, we'll import the data and metadata.
+
+```{r import1}
+abund_table<-read.xlsx("OysterHatcheryMicrobiome_phyladata.xlsx",sheet="taxa", rowNames = TRUE)
+meta_table<-read.xlsx("OysterHatcheryMicrobiome_phyladata.xlsx",sheet="meta")
+
+```
+
+Next we'll edit the data and merge the taxa data with the metadata so it's ready to plot.
+
+```{r editdata1}
+# order the abundance table by decreasing abundances
+abund_table<-abund_table[,order(colSums(abund_table),decreasing=TRUE)]
+
+#Extract list of top 12 Taxa and call everything else "Unknown"
+N<-12 # can change number of taxa to plot here
+taxa_list<-colnames(abund_table)[1:N]
+#Generate a new table with everything added to Others
+new_abund<-data.frame(abund_table[,colnames(abund_table) %in% taxa_list],
+          Others=rowSums(abund_table[,!colnames(abund_table) %in% taxa_list]))
+#convert the taxa data into long format
+#name the column with the phylum name "Taxa" and the column with the percent abundance values "Value"
+new_abund_long<-gather(new_abund, Taxa, Value)
+#Define leves of the taxa so that it plots in the correct order
+new_abund_long$Taxa<-factor(new_abund_long$Taxa, levels = unique(new_abund_long$Taxa))
+
+#Make a new data fram called meta_taxa and merge the metadata and long taxa data 
+meta_taxa<-as.data.frame(c(meta_table, new_abund_long))
+
+```
+
+Now we'll plot the percent abundances and the number of reads per sample.
+
+```{r plotfig1, fig.width=12}
+
+# define the palette we'll use for the percent abundances
+palette<-c("#00545b","#ff856d","#640025","#3ddda5","#cdffaa","#150e00","#bae278",
+             "#007a98","#ffe093","#00533f","#90f0ff","#6d3c00","#004f17")
+
+# plot the number of reads per sample
+pc<-ggplot(meta_table,aes(Samples,ReadCount, fill=Group))+
+  # plot using columns
+  geom_col()+theme_grey()+
+  # facet by type, then trial, then day, then treatment group.
+  facet_grid(.~Type+Trial+Day+Group,drop=TRUE, scale="free_x")+
+  # label the axes
+  labs(y="Read Abundance", x=NULL)+
+  # change the fill color to Control= light blue, Treatment=dark red.
+  scale_fill_manual(values=c("light blue", "dark red"))+
+  scale_y_continuous(expand = c(0,0))+
+  # edit the facets a little
+  theme(strip.text = element_blank(),legend.position="none",
+        axis.ticks.x = element_blank(),
+        panel.spacing = unit(0.1,"lines"),axis.text.x = element_blank())
+
+# plot the percent abundances
+p<-ggplot(meta_taxa,aes(Samples,Value,fill=Taxa))+geom_col(position="stack")+
+  facet_grid(.~Type+Trial+Day+Group, drop=TRUE,scale="free", space="free",switch="x")+
+  scale_fill_manual(values=palette)+labs(x=NULL, y="Percent Abundance")+
+  scale_y_continuous(expand = c(0,0),labels=scales::percent)+
+  theme(strip.background = element_rect(fill="gray85"),legend.position="none",
+        panel.spacing = unit(0.1,"lines"), axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+
+# get the legend for each plot
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+legendp<-g_legend(ggplot(meta_taxa,aes(Samples,Value,fill=Taxa))+
+                    geom_col()+scale_fill_manual(values=palette)+labs(fill="Phylum"))
+legendpc<-g_legend(ggplot(meta_table,aes(Samples,ReadCount, fill=Group))+
+                     geom_col()+scale_fill_manual(values=c("light blue", "dark red"))+labs(fill="Treatment Group"))
+
+# plot the figures and legends together
+grid.arrange(pc, legendpc, p, legendp, nrow=2, ncol=2, heights=c(1,2.5), widths=c(4,1))
+
+```
+
+
+**Figure 1.** Percent abundances of the 12 most abundant phyla in oyster larvae, biofilm swab, and rearing water samples from all 3 Trials based on 16S rRNA amplicon sequencing data (bottom). The total abundance of quality filtered sequencing reads is shown in the bar graph (top). The 12 dominant phyla include Actinobacteria, Bacteroidetes, Cyanobacteria, Deferribacteres, Firmicutes, Fusobacteria, Lentisphaerae, Planctomycetes, Proteobacteria, Spirochaetae, Verrucomicrobia, and Unknown. Note: there are no treated oyster larvae samples from Trial 2, Day 6.
+
+
+*** 
+*** 
+
+
+# Figure 2. Simpson's Diversity Index
+
+This figure uses the same phylum data as Figure 1 to calculate the diversity for each group. First we'll calculate the Simpson's diversity and add it to the meta_table variable.
+
+```{r diversitycalcs}
+
+# calculate simpson's diversity index for every sample.
+# put it into the metadata as $Simpsons
+meta_table$Simpsons<-diversity(abund_table, index="simpson")
+
+```
+
+Then, we'll plot the diversity values, using the same ggplot command as Figure 1.
+
+```{r plotfig2, fig.width=12}
+
+ggplot(meta_table, aes(as.factor(Day), Simpsons)) +
+  facet_grid(.~Type+Trial, scales="free",space="free_x")+ 
+  geom_boxplot(aes(fill=factor(Group)))+
+  scale_fill_manual(values=c("light blue", "dark red")) + 
+  labs(y="Simpson's Diversity Index", x="Day", fill="Treatment Group")+theme_bw()+
+  theme(axis.text.y = element_text(size=12), axis.title.y = element_text(size=12), 
+        legend.position = "right",panel.spacing = unit(0, "mm"),               
+        panel.border = element_rect(colour="grey50"))+
+  scale_y_continuous(limits=c(0,0.8))
+
+```
+
+**Figure 2.** Simpson's index of diversity of bacterial communities by sample (larvae, swab, water) and trial (n=3 tanks). No significant differences in diversity were found between control (light blue) and treatment (dark red) within each sample type and trial. Bacterial community diversity significantly increased over time in larvae, swab, and water samples from Trial 1, and water samples from Trial 3. Diversity in water was significantly higher in Trial 3 than Trials 1 and 2. Note: there are no treated oyster larvae samples from Trial 2, Day 6.
+
+
+*** 
+*** 
+
+
+# Figure 3. Bray-Curtis beta-diversity NMDS plots
+
+This figure imports the percent normalized Order-level taxa data. Then, we'll generate NMDS plots based on Sample Type, Sampling Timepoint, and Probiotic Treatment Group. First, we'll import the Order data and format it.
+
+```{r import3}
+
+#import water data for all trials at the order level and corresponding metadata
+abund_table_wo<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",
+                       sheet="water_trans_norm", rowNames = TRUE)
+meta_table_wo<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",sheet="water_meta")
+#Make sure each numbered column is a character with 2 characters
+meta_table_wo$Trial<-sprintf("%02d", as.numeric(as.character(meta_table_wo$Trial)))
+meta_table_wo$Day<-sprintf("%02d", as.numeric(as.character(meta_table_wo$Day)))
+
+
+#import all sample types data for trial 1.
+abund_table_t1<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",
+                       sheet="trial1_trans", rowNames = TRUE)
+meta_table_t1<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",sheet="trial1_meta")
+#Make sure each numbered column is a character with 2 characters
+meta_table_t1$Trial<-sprintf("%02d", as.numeric(as.character(meta_table_t1$Trial)))
+meta_table_t1$Day<-sprintf("%02d", as.numeric(as.character(meta_table_t1$Day)))
+
+
+#import all sample types data for trial 2.
+abund_table_t2<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",
+                       sheet="trial2_trans", rowNames = TRUE)
+meta_table_t2<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",sheet="trial2_meta")
+#Make sure each numbered column is a character with 2 characters
+meta_table_t2$Trial<-sprintf("%02d", as.numeric(as.character(meta_table_t2$Trial)))
+meta_table_t2$Day<-sprintf("%02d", as.numeric(as.character(meta_table_t2$Day)))
+
+
+
+```
+
+Next, we'll calculate some general solutions for plotting the NMDSs.
+
+```{r NMDSgeneral, results="hide", message=FALSE}
+
+# Define ellipse function
+#Reference: http://stackoverflow.com/questions/13794419/plotting-ordiellipse-function-from-vegan-package-onto-nmds-plot-created-in-ggplo
+#Data frame df_ell contains values to show ellipses. It is calculated with function veganCovEllipse which is hidden in vegan package. This function is applied to each level of NMDS (group) and it uses also function cov.wt to calculate covariance matrix.
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+# Extract data per trial, then find general NMDS solution using vegan
+# trial 1, all sample types
+grouping_info_t1<-data.frame(row.names=rownames(abund_table_t1),
+                             t(as.data.frame(strsplit(rownames(abund_table_t1),"_"))))
+sol_t1<-metaMDS(abund_table_t1,distance = "bray", k = 2, trymax = 50)
+NMDS_t1=data.frame(x=sol_t1$point[,1],y=sol_t1$point[,2],
+                Type=as.factor(meta_table_t1[,2]),Trial=as.factor(meta_table_t1[,3]),
+                Day=as.factor(meta_table_t1[,4]))
+
+# trial 2, all sample types
+grouping_info_t2<-data.frame(row.names=rownames(abund_table_t2),
+                             t(as.data.frame(strsplit(rownames(abund_table_t2),"_"))))
+sol_t2<-metaMDS(abund_table_t2,distance = "bray", k = 2, trymax = 50)
+NMDS_t2=data.frame(x=sol_t2$point[,1],y=sol_t2$point[,2],
+                Type=as.factor(meta_table_t2[,2]),Trial=as.factor(meta_table_t2[,3]),
+                Day=as.factor(meta_table_t2[,4]))
+
+# trial 1, water data
+trial1abund=abund_table_wo[1:12,]
+meta1<-filter(meta_table_wo,Trial=="01")
+grouping1<-data.frame(row.names=rownames(trial1abund),
+                      t(as.data.frame(strsplit(rownames(trial1abund),"_"))))
+sol1<-metaMDS(trial1abund,distance = "bray", k = 2, trymax = 50)
+NMDS1=data.frame(x=sol1$point[,1],y=sol1$point[,2],Trial=as.factor(meta1[,2]),
+                 Day=as.character(meta1[,3]),Treatment=as.factor(meta1[,4]))
+
+# trial 2, water data
+trial2abund=abund_table_wo[13:24,]
+meta2<-filter(meta_table_wo,Trial=="02")
+grouping2<-data.frame(row.names=rownames(trial2abund),
+                      t(as.data.frame(strsplit(rownames(trial2abund),"_"))))
+sol2<-metaMDS(trial2abund,distance = "bray", k = 2, trymax = 50)
+NMDS2=data.frame(x=sol2$point[,1],y=sol2$point[,2],Trial=as.factor(meta2[,2]),
+                 Day=as.character(meta2[,3]),Treatment=as.factor(meta2[,4]))
+
+# trial 3, water data
+trial3abund=abund_table_wo[25:42,]
+meta3<-filter(meta_table_wo,Trial=="03")
+grouping3<-data.frame(row.names=rownames(trial3abund),
+                      t(as.data.frame(strsplit(rownames(trial3abund),"_"))))
+sol3<-metaMDS(trial3abund,distance = "bray", k = 2, trymax = 50)
+NMDS3=data.frame(x=sol3$point[,1],y=sol3$point[,2],Trial=as.factor(meta3[,2]),
+                 Day=as.character(meta3[,3]),Treatment=as.factor(meta3[,4]))
+
+# define shapes for plots
+shape_values<-seq(16,21)
+
+# set theme for following plots
+theme_set(theme_bw())
+
+
+```
+
+#### 1. NMDS for Trial 1 by type
+
+```{r NMDS_type_trial1, results="hide", message=FALSE, fig.show="hide"}
+
+# Generate the ordination based on the solution from above and selected grouping factor (Type)
+plot.new()
+ord_t1<-ordiellipse(sol_t1, as.factor(grouping_info_t1[,1]), 
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points based on 95% confidence (SD) intervals
+df_ell_t1 <- data.frame()
+for(g in levels(NMDS_t1$Type)){
+  if(g!="" && (g %in% names(ord_t1))){
+    df_ell_t1 <- rbind(df_ell_t1, cbind(as.data.frame(with(NMDS_t1[NMDS_t1$Type==g,],
+    veganCovEllipse(ord_t1[[g]]$cov,ord_t1[[g]]$center,ord_t1[[g]]$scale))),Type=g))}}
+#Store the center of the ellipses (mean NMDS)
+NMDS.mean_t1=aggregate(NMDS_t1[,1:2],list(group=NMDS_t1$Type),mean)
+
+#Calculate p-value:
+adon_t1<-adonis2(abund_table_t1~Type, data=meta_table_t1, by=NULL,method="bray", k=2)
+
+#Plot NMDS
+NMDSplot_t1<-ggplot(data=NMDS_t1,aes(x,y,colour=Type))+
+  # label the middle of the ellipses with the name of the grouping factor
+  annotate("text",x=NMDS.mean_t1$x,y=NMDS.mean_t1$y,
+           label=NMDS.mean_t1$group,size=5)+
+  # add the p-value in the bottom right corner
+  annotate("text",x=min(NMDS_t1$x-0.5),y=min(NMDS_t1$y), 
+           label=paste("p= ", adon_t1$`Pr(>F)`[1]),size=4)+
+  # draw the ellipses. define color based on the grouping factor
+  geom_path(data=df_ell_t1, aes(x=NMDS1, y=NMDS2, linetype=Type), size=1)+
+  scale_linetype_manual(values=c("Oyster"="longdash","Swab"="dotdash","Water"="dotted"))+ 
+  scale_colour_manual(values=c("Oyster"="red", "Swab"="dark green", "Water"="blue"))+
+  # add the points per sample. define shape based on Day
+  geom_point(aes(shape=Day), size=3) + scale_shape_manual(values=c(16,16,17,17)) +
+  # reorder the legend
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),
+         shape = guide_legend(order=2))
+
+```
+
+#### 2. NMDS for Trial 2 by type
+
+```{r NMDS_type_trial2, results="hide", message=FALSE, fig.show="hide"}
+
+plot.new()
+ord_t2<-ordiellipse(sol_t2, as.factor(grouping_info_t2[,1]), 
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points
+df_ell_t2 <- data.frame()
+for(g in levels(NMDS_t2$Type)){
+  if(g!="" && (g %in% names(ord_t2))){
+    df_ell_t2 <- rbind(df_ell_t2, cbind(as.data.frame(with(NMDS_t2[NMDS_t2$Type==g,],
+    veganCovEllipse(ord_t2[[g]]$cov,ord_t2[[g]]$center,ord_t2[[g]]$scale))),Type=g))}}
+NMDS.mean_t2=aggregate(NMDS_t2[,1:2],list(group=NMDS_t2$Type),mean)
+
+# Calculate p-value:
+adon_t2<-adonis2(abund_table_t2~Type, data=meta_table_t2, by=NULL,method="bray", k=2)
+
+NMDSplot_t2<-ggplot(data=NMDS_t2,aes(x,y,colour=Type))+
+  annotate("text",x=NMDS.mean_t2$x,y=NMDS.mean_t2$y,
+           label=NMDS.mean_t2$group,size=5)+
+  annotate("text",x=min(NMDS_t2$x),y=min(NMDS_t2$y), 
+           label=paste("p= ", adon_t1$`Pr(>F)`[1]),size=4)+
+  geom_path(data=df_ell_t2, aes(x=NMDS1, y=NMDS2, linetype=Type), size=1)+
+  scale_linetype_manual(values=c("Oyster"="longdash","Swab"="dotdash","Water"="dotted"))+ 
+  scale_colour_manual(values=c("Oyster"="red", "Swab"="dark green", "Water"="blue"))+
+  geom_point(aes(shape=Day), size=3) + scale_shape_manual(values=c(16,16,17,17)) +
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),
+         shape = guide_legend(order=2))
+
+```
+
+#### 3. NMDS for Trial 1 by day
+
+```{r NMDS_day_trial1, results="hide", message=FALSE, fig.show="hide"}
+
+plot.new()
+ord_d1<-ordiellipse(sol1, as.factor(grouping1[,2]),
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points
+df_ell1d <- data.frame()
+for(g in levels(NMDS1$Day)){
+  if(g!="" && (g %in% names(ord_d1))){
+    df_ell1d <- rbind(df_ell1d, cbind(as.data.frame(with(NMDS1[NMDS1$Day==g,],
+    veganCovEllipse(ord_d1[[g]]$cov,ord_d1[[g]]$center,ord_d1[[g]]$scale))),Day=g))}}
+NMDS1.mean=aggregate(NMDS1[,1:2],list(group=NMDS1$Day),mean)
+
+# Calculate p-value:
+adon_d1<-adonis2(trial1abund~Day, data=meta1, by=NULL,method="bray", k=2)
+
+NMDSplot_d1<-ggplot(data=NMDS1,aes(x,y,colour=Day))+
+  annotate("text",x=min(NMDS1$x+0.1),y=min(NMDS1$y), 
+           label=paste("p= ", adon_d1$`Pr(>F)`[1]),size=4)+
+  geom_path(data=df_ell1d, aes(x=NMDS1, y=NMDS2, linetype=Day), size=1)+
+  scale_linetype_manual(values=c("longdash", "dotted"))+ 
+  scale_colour_manual(values=c("01"="orange", "12"="blue"))+
+  geom_point(aes(shape=Treatment), size=3) + scale_shape_manual(values=shape_values) +
+  guides(color = guide_legend(order=1),
+         lty= guide_legend(order=1),shape = guide_legend(order=2))+
+  annotate("text",x=NMDS1.mean$x,y=NMDS1.mean$y,
+           label=NMDS1.mean$group,size=6)
+
+```
+
+#### 4. NMDS for Trial 2 by day
+
+```{r NMDS_day_trial2, results="hide", message=FALSE, fig.show="hide"}
+
+plot.new()
+ord_d2<-ordiellipse(sol2, as.factor(grouping2[,2]),
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points
+df_ell2d <- data.frame()
+for(g in levels(NMDS2$Day)){
+  if(g!="" && (g %in% names(ord_d2))){
+    df_ell2d <- rbind(df_ell2d, cbind(as.data.frame(with(NMDS2[NMDS2$Day==g,],
+    veganCovEllipse(ord_d2[[g]]$cov,ord_d2[[g]]$center,ord_d2[[g]]$scale))),Day=g))}}
+NMDS2.mean=aggregate(NMDS2[,1:2],list(group=NMDS2$Day),mean)
+
+# Calculate p-value:
+adon_d2<-adonis2(trial2abund~Day, data=meta2, by=NULL,method="bray", k=2)
+
+NMDSplot_d2<-ggplot(data=NMDS2,aes(x,y,colour=Day))+
+  annotate("text",x=NMDS2.mean$x,y=NMDS2.mean$y,
+           label=NMDS2.mean$group,size=6)+
+  annotate("text",x=min(NMDS2$x)-0.4,y=min(NMDS2$y), 
+           label=paste("p= ", adon_d2$`Pr(>F)`[1]),size=4)+
+  geom_path(data=df_ell2d, aes(x=NMDS1, y=NMDS2, linetype=Day), size=1)+
+  scale_linetype_manual(values=c("longdash", "solid"))+ 
+  scale_colour_manual(values=c("01"="orange", "09"="dark green"))+
+  geom_point(aes(shape=Treatment), size=3) + scale_shape_manual(values=shape_values)+
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),
+         shape = guide_legend(order=2)) 
+
+```
+
+
+#### 5. NMDS for Trial 3 by day
+
+```{r NMDS_day_trial3, results="hide", message=FALSE, fig.show="hide"}
+
+plot.new()
+ord_d3<-ordiellipse(sol3, as.factor(grouping3[,2]),
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points
+df_ell3d <- data.frame()
+for(g in levels(NMDS3$Day)){
+  if(g!="" && (g %in% names(ord_d3))){
+    df_ell3d <- rbind(df_ell3d, cbind(as.data.frame(with(NMDS3[NMDS3$Day==g,],
+    veganCovEllipse(ord_d3[[g]]$cov,ord_d3[[g]]$center,ord_d3[[g]]$scale))),Day=g))}}
+NMDS3.mean=aggregate(NMDS3[,1:2],list(group=NMDS3$Day),mean)
+
+# Calculate p-value:
+adon_d3<-adonis2(trial3abund~Day, data=meta3, by=NULL,method="bray", k=2)
+
+NMDSplot_d3<-ggplot(data=NMDS3,aes(x,y,colour=Day))+
+  annotate("text",x=NMDS3.mean$x,y=NMDS3.mean$y,
+           label=NMDS3.mean$group,size=6)+
+  annotate("text",x=min(NMDS3$x),y=min(NMDS3$y), 
+           label=paste("p= ", adon_d3$`Pr(>F)`[1]),size=4)+
+  geom_path(data=df_ell3d, aes(x=NMDS1, y=NMDS2, linetype=Day), size=1)+
+  scale_linetype_manual(values=c("twodash", "dotted", "solid"))+ 
+  scale_colour_manual(values=c("05"="red", "08"="purple", "12"="blue"))+
+  geom_point(aes(shape=Treatment), size=3) + scale_shape_manual(values=shape_values) +
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),
+         shape = guide_legend(order=2))
+
+```
+
+#### 6. NMDS for Trial 1 by treatment
+
+```{r NMDS_treat_trial1, results="hide", message=FALSE, fig.show="hide"}
+
+plot.new()
+ord_g1<-ordiellipse(sol1, as.factor(grouping1[,4]),
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points
+df_ell1g <- data.frame()
+for(g in levels(NMDS1$Treatment)){
+  if(g!="" && (g %in% names(ord_g1))){
+    df_ell1g <- rbind(df_ell1g, cbind(as.data.frame(with(NMDS1[NMDS1$Treatment==g,],
+    veganCovEllipse(ord_g1[[g]]$cov,ord_g1[[g]]$center,ord_g1[[g]]$scale))),Treatment=g))}}
+NMDS1g.mean=aggregate(NMDS1[,1:2],list(group=NMDS1$Treatment),mean)
+
+# Calculate p-value:
+adon_g1<-adonis2(trial1abund~Treatment, data=meta1, by=NULL,method="bray", k=2)
+
+NMDSplot_g1<-ggplot(data=NMDS1,aes(x,y,colour=Treatment))+
+  annotate("text",x=NMDS1g.mean$x,y=NMDS1g.mean$y*4,
+           label=NMDS1g.mean$group,size=5)+
+  annotate("text",x=min(NMDS1$x-0.5),y=min(NMDS1$y-.3), 
+           label=paste("p= ", adon_g1$`Pr(>F)`[1]),size=4)+
+  geom_path(data=df_ell1g, aes(x=NMDS1, y=NMDS2, linetype=Treatment), size=1)+
+  scale_linetype_manual(values=c("longdash", "dotted"))+ 
+  scale_colour_manual(values=c("Control"="light blue", "Treatment"="dark red"))+
+  geom_point(aes(shape=Day), size=3) + scale_shape_manual(values=shape_values)+
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),
+         shape = guide_legend(order=2))
+
+
+```
+
+
+#### 7. NMDS for Trial 2 by treatment
+
+```{r NMDS_treat_trial2, results="hide", message=FALSE, fig.show="hide"}
+
+plot.new()
+ord_g2<-ordiellipse(sol2, as.factor(grouping2[,4]),
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points
+df_ell2g <- data.frame()
+for(g in levels(NMDS2$Treatment)){
+  if(g!="" && (g %in% names(ord_g2))){
+    df_ell2g <- rbind(df_ell2g, cbind(as.data.frame(with(NMDS2[NMDS2$Treatment==g,],
+    veganCovEllipse(ord_g2[[g]]$cov,ord_g2[[g]]$center,ord_g2[[g]]$scale))),Treatment=g))}}
+NMDS2g.mean=aggregate(NMDS2[,1:2],list(group=NMDS2$Treatment),mean)
+
+# Calculate p-value:
+adon_g2<-adonis2(trial2abund~Treatment, data=meta2, by=NULL,method="bray", k=2)
+
+NMDSplot_g2<-ggplot(data=NMDS2,aes(x,y,colour=Treatment))+
+  annotate("text",x=NMDS2g.mean$x,y=NMDS2g.mean$y,
+           label=NMDS2g.mean$group,size=5)+
+  annotate("text",x=min(NMDS2$x-0.7),y=min(NMDS2$y-.2), 
+           label=paste("p= ", adon_g2$`Pr(>F)`[1]),size=4)+
+  geom_path(data=df_ell2g, aes(x=NMDS1, y=NMDS2, linetype=Treatment), size=1)+
+  scale_linetype_manual(values=c("longdash", "dotted"))+ 
+  scale_colour_manual(values=c("Control"="light blue", "Treatment"="dark red"))+
+  geom_point(aes(shape=Day), size=3) + scale_shape_manual(values=shape_values) +
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),
+         shape = guide_legend(order=2))
+
+
+```
+
+
+#### 8. NMDS for Trial 3 by treatment
+
+```{r NMDS_treat_trial3, results="hide", message=FALSE, fig.show="hide"}
+
+plot.new()
+ord_g3<-ordiellipse(sol3, as.factor(grouping3[,4]),
+                    display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+#Generate ellipse points
+df_ell3g <- data.frame()
+for(g in levels(NMDS3$Treatment)){
+  if(g!="" && (g %in% names(ord_g3))){
+    df_ell3g <- rbind(df_ell3g, cbind(as.data.frame(with(NMDS3[NMDS3$Treatment==g,],
+    veganCovEllipse(ord_g3[[g]]$cov,ord_g3[[g]]$center,ord_g3[[g]]$scale))),Treatment=g))}}
+NMDS3g.mean=aggregate(NMDS3[,1:2],list(group=NMDS3$Treatment),mean)
+
+# Calculate p-value:
+adon_g3<-adonis2(trial3abund~Treatment, data=meta3, by=NULL,method="bray", k=2)
+
+NMDSplot_g3<-ggplot(data=NMDS3,aes(x,y,colour=Treatment))+
+  annotate("text",x=NMDS3g.mean$x,y=NMDS3g.mean$y,
+           label=NMDS3g.mean$group,size=5)+
+  annotate("text",x=min(NMDS3$x-0.1),y=min(NMDS3$y-.1), 
+           label=paste("p= ", adon_g3$`Pr(>F)`[1]),size=4)+
+  geom_path(data=df_ell3g, aes(x=NMDS1, y=NMDS2, linetype=Treatment), size=1)+
+  scale_linetype_manual(values=c("longdash", "dotted"))+ 
+  scale_colour_manual(values=c("Control"="light blue", "Treatment"="dark red"))+
+  geom_point(aes(shape=Day), size=3) + scale_shape_manual(values=shape_values)+
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),
+         shape = guide_legend(order=2))
+
+
+```
+
+
+
+```{r plotfig3, fig.width=15, fig.height=10}
+
+# define a plot with the trial titles
+titles<-ggplot(meta_table_wo, aes(x=Trial, y="", label=paste("Trial",Trial)))+
+  geom_text(size=10)+theme_pubclean()+
+  theme(axis.text = element_blank(),axis.title=element_blank(), 
+        axis.ticks = element_blank())
+
+# Group plots by row, and reorder legends
+NMDStype<-cowplot::plot_grid(NMDSplot_t1,NMDSplot_t2,NULL, 
+                             nrow=1, align = 'hv',axis = 'b')
+NMDSday<-cowplot::plot_grid(NMDSplot_d1,NMDSplot_d2,NMDSplot_d3, 
+                            nrow=1, align = 'hv',axis = 'b')
+NMDStreat<-cowplot::plot_grid(NMDSplot_g1,NMDSplot_g2,NMDSplot_g3, 
+                              nrow=1, align = 'hv',axis = 'b')
+
+# plot it all together!
+cowplot::plot_grid(titles, NMDStype, NMDSday, NMDStreat, 
+                   nrow=4, ncol=1, align = 'hv',axis = 'b', rel_heights = c(1,3,3,3),
+                   labels=c(" ","A. Sample Type","B. Day","C. Treatment Group"), 
+                   vjust=0, hjust=-0.02)
+
+
+```
+
+
+**Figure 3.** NMDS plot visualization of Bray-Curtis beta-diversity (k=2) at the Order level by (A) sample type, (B) sampling day, and (C) treatment. The ellipse lines show the 95% confidence interval. p-values indicate significance of grouping with adonis2 Permutational Multivariate Analysis of Variance Using Distance Matrices test. (A) The different types of samples are indicated by colors (Oyster=dashed red, Swab=dashdot green, Water=dotted blue) and the days are indicated by symbols (Timepoint 1=circle, Timepoint 2=triangle). The water and swab communities were significantly distinct from each other in both trials. (B) The sampling timepoints are indicated by colors (1=longdash yellow, 5=shortdash red, 8=dashdot purple, 9=solid green, 12=dotted blue) and the treatment group is indicated by symbols (control=circle, probiotic treatment=triangle). The water community was significantly different between timepoints. (C) The treatment group is indicated by colors (control=light blue dashed, probiotic treatment=dark red dotted) and sampling timepoints are indicated by symbols. No significant differences in community structure in water from control and probiotic-treated tanks was detected when samples from all time points were analyzed together. 
+
+
+*** 
+*** 
+
+
+# Figure 4. Bacillales and Oceanospirillales Relative Read Abundances
+
+This figure will extract the percent of Bacillales and Oceanospirillales reads in the water samples and plot them per trial/day/group. We'll use the order data imported for Figure 3. 
+
+```{r format4}
+
+# use order data already imported:
+# abund_table_wo and meta_table_wo
+# merge them together!
+allwaterorder<-as.data.frame(c(meta_table_wo, abund_table_wo))
+# rename taxa variable correctly
+allwaterorder$Sample<-allwaterorder$taxa
+
+# group data and calculate means of bacillales, oceanospirillales, vibrionales
+grouped_orderdata <- group_by(allwaterorder, Trial, Day, Treatment)
+data_means <- summarise(grouped_orderdata,
+                         meanoc = mean(Bacteria.Proteobacteria.Gammaproteobacteria.Oceanospirillales, na.rm=TRUE), 
+                         stdevoc = sd(Bacteria.Proteobacteria.Gammaproteobacteria.Oceanospirillales, na.rm=TRUE),
+                         meanbac = mean(Bacteria.Firmicutes.Bacilli.Bacillales, na.rm=TRUE),
+                         stdevbac = sd(Bacteria.Firmicutes.Bacilli.Bacillales, na.rm=TRUE))
+
+# add some extra space for the significance bars
+data_means$y_max<-(data_means$meanbac*1.4)
+data_means$y_max[1]<-0.0018
+
+```
+
+```{r figplot4}
+
+theme_set(theme_bw())
+
+# plot the oceanospirillales
+ploto<-ggplot(data_means, aes(as.factor(Day),meanoc, fill=Treatment))+
+  geom_bar(stat="identity", aes(fill=Treatment), position="dodge")+
+  geom_errorbar(aes(ymin=meanoc-stdevoc, ymax=meanoc+stdevoc), 
+                width=0.2, position=position_dodge(.9))+
+  facet_wrap(~Trial, scales="free", 
+             labeller = as_labeller(c("01"="Trial 1", "02"="Trial 2", "03"="Trial 3")))+
+  labs(x="Day", y="Normalized Percent Abundance \nof Oceanospirillales Reads")+
+  scale_fill_manual(values=c("light blue", "dark red"))+
+  theme(plot.margin = unit(c(0.1, 1, 0, 0), "cm"), strip.text = element_text(size = 14), 
+        axis.text = element_text(size = 10), 
+        axis.title = element_text(size = 10),legend.position="none")+
+  scale_y_continuous(labels = scales::percent_format(accuracy=.01), limits=c(0,0.20))+
+  ggtitle("Relative Oceanospirillales Adundance")
+
+# plot the bacillales
+plotb<-ggplot(data_means, aes(as.factor(Day),meanbac, fill=Treatment))+
+  geom_bar(stat="identity", aes(fill=Treatment), position="dodge") +
+  geom_blank(aes(y = y_max))+
+  geom_errorbar(aes(ymin=pmax(meanbac-stdevbac,0), ymax=meanbac+stdevbac), 
+                width=0.2, position=position_dodge(.9))+
+  facet_wrap(~Trial, scales="free", 
+             labeller = as_labeller(c("01"="Trial 1", "02"="Trial 2", "03"="Trial 3")))+
+  labs(y="Normalized Percent Abundance \nof Bacillus Reads", x=NULL)+
+  scale_fill_manual(values=c("light blue", "dark red"))+
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),strip.text = element_text(size = 14), 
+        axis.text = element_text(size = 10), 
+        axis.title = element_text(size = 10),legend.position = "none")+
+  scale_y_continuous(labels = scales::percent_format(accuracy=.01))+
+  ggtitle("Relative Bacillales Adundance")
+
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+# get the legend
+legendabund<-g_legend(ggplot(data_means, aes(as.factor(Day),meanbac, fill=Treatment))+
+                     geom_col()+scale_fill_manual(values=c("light blue", "dark red"))+
+                       labs(fill=NULL)+theme(legend.position = "bottom"))
+
+# plot them all together
+abplots<-cowplot::plot_grid(plotb,ploto, nrow=2, align = 'hv')
+cowplot::plot_grid(abplots, legendabund, nrow=2, rel_heights = c(8,1))
+
+
+```
+
+**Figure 4.** Effect of probiotic treatment on relative percent read abundance of (a) Bacillales and (b) Oceanospirillales in water. Number of reads in treated (dark red) and control (light blue) samples (n=3 tanks per treatment) are represented for each sampling day and trial. (a) Bacillales was relatively significantly higher in the treated than the control water after 5 days of treatment, and (b) Oceanospirillales were consistently more abundant in probiotic-treated tank rearing water, and decreased with time.
+
+
+
+***
+***
+
+# Figure 5. Trial 1 Vibrionales Relative Read Abundances and Diversity
+
+This figure will plot the relative percent abundance of Vibrionales in each group, and the inter-Vibrionales diversity. We'll use the order data already imported, then import a Vibrio biom file to calculate the Vibrio diversity per sample.
+
+First, let's plot the percent number of Vibrionales reads per group.
+
+```{r vibrioabund}
+
+# use order data already imported for all samples in trial 1:
+#abund_table_1 and meta_table_1
+# merge them together!
+trial1order<-as.data.frame(c(meta_table_t1, abund_table_t1))
+trial1order$Sample<-trial1order$taxa
+
+# group and calculate means of vibrionales
+grouped_trial1 <- group_by(trial1order, Type, Day, Treatment)
+trial1_vibrio_means <- summarise(grouped_trial1,
+                         meanvib = mean(Bacteria.Proteobacteria.Gammaproteobacteria.Vibrionales, na.rm=TRUE), 
+                         stdevvib = sd(Bacteria.Proteobacteria.Gammaproteobacteria.Vibrionales, na.rm=TRUE))
+
+#add some room for error bars
+trial1_vibrio_means$y_max<-(trial1_vibrio_means$meanvib*1.5)
+
+# and then plot it!
+plotv<-ggplot(trial1_vibrio_means, aes(as.factor(Day),meanvib, fill=Treatment))+
+  geom_bar(stat="identity", aes(fill=Treatment), position="dodge")+
+  geom_errorbar(aes(ymin=pmax(meanvib-stdevvib,0), ymax=meanvib+stdevvib), 
+                width=0.2, position=position_dodge(.9))+
+  facet_wrap(~Type, scales="free")+
+  labs(y="Normalized Percent Abundance \nof Vibrionales Reads", x="Day")+
+  scale_fill_manual(values=c("light blue", "dark red"))+
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),strip.text = element_text(size = 14), 
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 10),legend.position = "none")+
+  scale_y_continuous(labels = scales::percent_format(accuracy=.01))+
+  ggtitle("Relative Vibrionales Adundance per Sample Type in Trial 1")+
+  geom_blank(aes(y = y_max))
+
+
+```
+
+
+Now, we'll import the Vibrionales reads by species and plot the diversities.
+
+```{r vibriodiversity}
+
+vibrio_biom = import_biom("Trial1_Vibrio_2231614vamps_sparse_matrix_custom_norm_maximum.biom") 
+
+meta_table_t1$diversity<-estimate_richness(vibrio_biom, measures=c("simpson"))
+
+diversev<- ggplot(meta_table_t1, aes(as.factor(Day),diversity$Simpson))+
+  geom_boxplot(aes(fill=Treatment), position="dodge")+
+  facet_wrap(~Type, scales="free")+
+  labs(y="Simpson's Diversity Index ", x=NULL)+
+  scale_fill_manual(values=c("light blue", "dark red"))+
+  theme(strip.text = element_text(size = 14), axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12),legend.position = "none")+
+  scale_y_continuous(limits=c(0,0.8))+
+  ggtitle("Vibrionales Simpson's Diversity")
+
+```
+
+And then we plot them together:
+
+```{r fig5plot}
+
+vibrioplots<-cowplot::plot_grid(diversev, plotv,countv, nrow=3, align = 'hv',axis = 'b')
+
+cowplot::plot_grid(vibrioplots, legendabund, nrow=2, rel_heights = c(8,1))
+
+
+```
+
+**Figure 5.** Effect of treatment, time, and samples type on Simpson's Index of Diversity for Vibrionales (a, boxplots) and Total Vibrionales relative percent read abundance (b, bar graph). Representative data from Trial 1 (n=3 tanks per treatment). Note different scales for (b). 
+
+
+***
+***
+
+# Figure 6. Vibrionales Oligotyping Percentages
+
+This figure was exported directly from VAMPS.
+
+**Figure 6.** Vibrio spp. oligotypes in Control (CON) and Treatment (T) water samples on Days 5, 8, and 12 from Trial 3. These 8 oligotypes were generated from changes in positions 23 and 37 in a total of 1727 sequences, represented with the 2 letter abbreviations in the legend. The taxonomy of the 4 most abundant oligotypes is shown. Vibrio oligotypes showed differences in succession of species over time between control and treatment rearing water.
+
+***
+***
+
+# Figure 7. Trial 3 Co-occurrence Network
+
+This figure shows the relatedness of taxa based on their relative abundances and treatment group. We built the relationship table using these commands in R, then exported it to Cytoscape for viewing.
+
+```{r cooccurrence, eval=FALSE}
+
+
+# import Trial 3 Order data as a biom file
+ord3_biom = import_biom("Trial3_695Con_apost_8393634vamps_sparse_matrix_orderx_norm_maximum.biom")
+# build the network
+igorder3 = make_network(ord3_biom, type="taxa",distance="bray", max.dist = 0.5, 
+                        keep.isolates=FALSE)
+
+plot_network(igorder3)
+plot.igraph(igorder3, mark.shape = 0.1)
+summary(igorder3)
+
+# Export as a csv
+write.csv(as_long_data_frame(igorder3), file="LongDataFrame.csv")
+# Then delete all but columns D and E --> Interactions.csv
+# import into cyctoscape
+
+```
+
+
+**Figure 7.** Co-occurrence network analysis based on Bray-Curtis dissimilarity metric (max distance =0.5, Order level) for water samples from Trial 3 (n=3 tanks per treatment and day, total of 18). Taxa that change in the same way share an edge; nodes that have edges occur in the same proportions and in the same samples. Darker blue circle nodes indicate taxa that occur in the Control significantly more than Treated water samples. White nodes have equal occurrence in treated and control water samples. Darker red diamond nodes indicated taxa that occurs in the Treated significantly more than Control water samples. 
+
+
+
+***
+***
+
+
+
+# Supplementary Figures
+
+### Figure S1. Rarefaction Curves
+
+This figure shows the rarefaction curves for all the water samples. We use non-normalized data to rarefy and plot. 
+
+```{r rarefaction, fig.show="hide"}
+
+#import pre-normalized data at the order level
+waterdata<-read.xlsx("TAXA_AllTrials_Water_Order_trans.xlsx")
+#determine number of orders
+S<-specnumber(waterdata)
+#rarefy data
+raremax<-min(rowSums(waterdata))
+#define colors and linetypes based on trial number
+colors<-c("blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue","blue",
+         "forestgreen","forestgreen","forestgreen","forestgreen","forestgreen","forestgreen",
+         "forestgreen","forestgreen","forestgreen","forestgreen","forestgreen","forestgreen",
+         "hotpink","hotpink","hotpink","hotpink","hotpink","hotpink","hotpink","hotpink","hotpink",
+         "hotpink","hotpink","hotpink",
+         "hotpink","hotpink","hotpink","hotpink","hotpink","hotpink")
+lty <- c("solid","solid","solid","solid","solid","solid","solid","solid","solid","solid",
+         "solid","solid","dashed","dashed","dashed","dashed","dashed","dashed","dashed",
+         "dashed","dashed","dashed","dashed","dashed",
+         "dotdash","dotdash","dotdash","dotdash","dotdash","dotdash","dotdash","dotdash",
+         "dotdash","dotdash","dotdash","dotdash",
+         "dotdash","dotdash","dotdash","dotdash","dotdash","dotdash")
+
+#put plotting parameters into pars
+pars <- expand.grid(col = colors, lty = lty, stringsAsFactors = FALSE)
+#generate rarefaction curves - THIS STEP TAKES A LITTLE WHILE TO RUN.
+outw <- with(pars[1:42,], rarecurve(waterdata, step = 20, sample = raremax, col = colors, lty=lty, label = FALSE))
+
+# determine limits of the graph
+Nmax <- sapply(outw, function(x) max(attr(x, "Subsample")))
+Smax <- sapply(outw, max)
+
+```
+
+
+```{r figureS1}
+
+# plot the curves
+plot.new()
+plot(c(1, max(Nmax)), c(1, max(Smax)), xlab = "Sample Size",
+     ylab = "Number of Orders", type = "n")
+abline(v = raremax)
+for (i in seq_along(outw)) {
+  N <- attr(outw[[i]], "Subsample")
+  with(pars, lines(N, outw[[i]], col = col[i], lty = lty[i]))
+}
+temp <- legend("bottomright", legend = c(" ", " "," "), lty=1,
+               text.width = strwidth("1,000,000"),
+               col=c("darkgreen","blue", "hotpink"), xjust = 1, yjust = 1)
+text(temp$rect$left + temp$rect$w, temp$text$y,c("Trial 1", "Trial 2", "Trial 3"), pos = 2)
+
+
+```
+
+
+**Supplementary Figure 1.** Rarefaction curve from all water samples from all three Trials based on taxonomic classification at the order level.
+
+
+***
+***
+
+
+### Figure S2. Trial 1 Top 20 Most Abundant Orders
+
+This figure shows the relative abundances of the top 20 most abundant orders in the Trial 1 samples (water, swab, oyster)
+
+```{r figS5, fig.width=12, message=FALSE, results='hide'}
+
+library(plyr)
+
+# order the abundance table by decreasing abundances
+ordered_trial1_abund<-abund_table_t1[,order(colSums(abund_table_t1),decreasing=TRUE)]
+
+#Extract list of top 20 Taxa
+N<-20 # can change number of taxa to plot here
+taxa_list<-colnames(ordered_trial1_abund)[1:N]
+#Generate a new table with just top 20 most abundant.
+new_abund_1<-data.frame(ordered_trial1_abund[,colnames(ordered_trial1_abund) %in% taxa_list])
+#merge with metadata
+trial1_topN<-as.data.frame(c(meta_table_t1, new_abund_1))
+trial1_topN$SampleName<-trial1_topN$taxa
+trial1_topNg<-gather(trial1_topN, taxa, value, 
+                     "Bacteria.Proteobacteria.Alphaproteobacteria.Rhodobacterales":
+                       "Bacteria.Proteobacteria.Gammaproteobacteria.Xanthomonadales")
+trial1_topNg_norm<-ddply(trial1_topNg,.(SampleName),transform,
+                         rescale=sqrt(as.numeric(value)))
+trial1_topNg_norm$taxa = factor(trial1_topNg_norm$taxa, 
+                                levels = rev(unique(trial1_topNg_norm$taxa)))
+
+
+ggplot(trial1_topNg_norm, aes(SampleName, taxa)) + 
+  geom_tile(aes(fill = rescale),colour = "white") + 
+  facet_grid(~Type+Day+Treatment,space="free", scales="free")+
+  #  scale_fill_gradient(na.value = "grey50",low="white",high="red")+
+  scale_fill_gradientn(labels = scales::percent,limits=c(0,1),
+                       colours=c("white", "purple4"))+
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) + 
+  theme(legend.position = "bottom",axis.ticks = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size=10, colour="grey40"),
+        legend.text = element_text(size=10, colour="grey40"),
+        legend.key.size = unit(2, 'lines'))+
+  labs(y="Most abundant taxa (Order level)", x=NULL, fill="Relative\nPercent\nAbundance")
+
+```
+
+
+**Supplementary Figure 2.** The relative abundances of the 20 most abundant orders in oyster, swab, and water samples from Trial 1.
+
+
+*** 
+*** 
+
+
+### Figure S3. Water Types NMDS
+
+This figure imports the raw hatchery inflow/outflow water and then plots it as an NMDS using Bray-Curtis beta-diversity.
+
+
+```{r figs3, fig.show='hide',message=FALSE, results="hide"}
+
+# see above in Figure 3 for details on methods below.
+
+trial3all_abund<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",sheet="trial3_all", rowNames = TRUE)
+grouping_info_3w<-data.frame(row.names=rownames(trial3all_abund),
+                             t(as.data.frame(strsplit(rownames(trial3all_abund),"_"))))
+
+sol3w<-metaMDS(trial3all_abund,distance = "bray", k = 2, trymax = 50)
+NMDS3w=data.frame(x=sol3w$point[,1],y=sol3w$point[,2],
+                  Day=as.factor(grouping_info_3w[,1]),
+                  Tank=as.factor(grouping_info_3w[,2]),Treatment=as.factor(grouping_info_3w[,3]))
+plot.new()
+ord3w<-ordiellipse(sol3w, as.factor(grouping_info_3w[,3]),
+                   display = "sites", kind ="sd", conf = 0.95, label = T)
+dev.off()
+
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+#Generate ellipse points
+df_ell_3w <- data.frame()
+for(g in levels(NMDS3w$Treatment)){
+  if(g!="" && (g %in% names(ord3w))){
+    df_ell_3w <- rbind(df_ell_3w, cbind(as.data.frame(with(NMDS3w[NMDS3w$Treatment==g,],
+                veganCovEllipse(ord3w[[g]]$cov,ord3w[[g]]$center,ord3w[[g]]$scale))),Treatment=g))}}
+
+NMDS3w.mean=aggregate(NMDS3w[,1:2],list(group=NMDS3w$Treatment),mean)
+
+```
+
+```{r plotfigS3, fig.width=7}
+
+# Calculate p-value:
+adon_S3<-adonis2(trial3all_abund~X3, data=grouping_info_3w, by=NULL,method="bray", k=2)
+
+# Plot the NMDS
+NMDSplot_S3<-ggplot(data=NMDS3w,aes(x,y,colour=Treatment))+
+  annotate("text",x=NMDS3w.mean$x,y=NMDS3w.mean$y*2,label=NMDS3w.mean$group,size=5)+
+  annotate("text",x=min(NMDS3w$x),y=min(NMDS3w$y-0.1), label=paste("p= ", adon_S3$`Pr(>F)`[1], "***"),size=4)+
+  geom_path(data=df_ell_3w, aes(x=NMDS1, y=NMDS2, linetype=Treatment), size=1)+
+  scale_linetype_manual(name="Water Group", limits=c("Control","Treatment", "Inflow","Outflow"), 
+                        values=c("longdash", "dotted", "solid", "solid"))+
+  scale_colour_manual(name="Water Group", limits=c("Control","Treatment", "Inflow","Outflow"), 
+                      values=c("light blue", "dark red", "grey", "black"))+
+  geom_point(aes(shape=Day), size=3) + scale_shape_manual(values=c(16,17,18)) +
+  guides(color = guide_legend(order=1),lty= guide_legend(order=1),shape = guide_legend(order=2))
+
+NMDSplot_S3
+
+```
+
+**Supplementary Figure 3.** NMDS plot visualization of Bray-Curtis beta-diversity (k=2) at the Order level by Treatment or Water Source of water samples from Trial 3. The ellipse lines show the 95% confidence interval. The water group is indicated by colors (control=light blue dashed, probiotic treatment=dark red dotted, inflow=grey solid, outflow=black solid) and sampling timepoints are indicated by symbols. The inflow water (water piped directly from the environment into the hatchery) and outflow water (inflow water UV-treated and sterilized) are significantly distinct groups, separate from the experimental samples. p-value indicates significance of groupings with adonis2 Permutational Multivariate Analysis of Variance Using Distance Matrices test.
+
+
+
