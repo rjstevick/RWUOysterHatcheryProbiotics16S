@@ -2,7 +2,7 @@
 title: Figures for Bacterial Community Dynamics in an Oyster Hatchery in Response
   to Probiotic Treatment
 author: 'Rebecca Stevick, contact: rstevick@uri.edu'
-date: "Finalized March 12, 2019"
+date: "Finalized May 2, 2019"
 output:
   html_document: default
   pdf_document: default
@@ -74,7 +74,7 @@ pc<-ggplot(meta_table,aes(Samples,ReadCount, fill=Group))+
   labs(y="Read Abundance", x=NULL)+
   # change the fill color to Control= light blue, Treatment=dark red.
   scale_fill_manual(values=c("light blue", "dark red"))+
-  scale_y_continuous(expand = c(0,0))+
+  scale_y_continuous(expand = c(0,0),labels=scales::scientific_format(digits=1))+
   # edit the facets a little
   theme(strip.text = element_blank(),legend.position="none",
         axis.ticks.x = element_blank(),
@@ -83,7 +83,7 @@ pc<-ggplot(meta_table,aes(Samples,ReadCount, fill=Group))+
 # plot the percent abundances
 p<-ggplot(meta_taxa,aes(Samples,Value,fill=Taxa))+geom_col(position="stack")+
   facet_grid(.~Type+Trial+Day+Group, drop=TRUE,scale="free", space="free",switch="x")+
-  scale_fill_manual(values=palette)+labs(x=NULL, y="Percent Abundance")+
+  scale_fill_manual(values=palette)+labs(x=NULL, y="Percent Phyla Abundance")+
   scale_y_continuous(expand = c(0,0),labels=scales::percent)+
   theme(strip.background = element_rect(fill="gray85"),legend.position="none",
         panel.spacing = unit(0.1,"lines"), axis.text.x = element_blank(), 
@@ -189,7 +189,7 @@ Next, we'll calculate some general solutions for plotting the NMDSs.
 ```{r NMDSgeneral, results="hide", message=FALSE}
 
 # Define ellipse function
-#Reference: http://stackoverflow.com/questions/13794419/plotting-ordiellipse-function-from-vegan-package-onto-nmds-plot-created-in-ggplo
+#Reference: http://stackoverflow.com/questions/13794419/plotting-ordiellipse-function-from-vegan-package-onto-nmds-plot-created-in-ggplot
 #Data frame df_ell contains values to show ellipses. It is calculated with function veganCovEllipse which is hidden in vegan package. This function is applied to each level of NMDS (group) and it uses also function cov.wt to calculate covariance matrix.
 veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
 {
@@ -615,7 +615,8 @@ ploto<-ggplot(data_means, aes(as.factor(Day),meanoc, fill=Treatment))+
   theme(plot.margin = unit(c(0.1, 1, 0, 0), "cm"), strip.text = element_text(size = 14), 
         axis.text = element_text(size = 10), 
         axis.title = element_text(size = 10),legend.position="none")+
-  scale_y_continuous(labels = scales::percent_format(accuracy=.01), limits=c(0,0.20))+
+  scale_y_continuous(labels = scales::percent_format(accuracy=.1), limits=c(0,0.20))+
+  scale_x_discrete(labels=c("01"="1", "05"="5","08"="8","09"="9","12"="12"))+
   ggtitle("Relative Oceanospirillales Adundance")
 
 # plot the bacillales
@@ -626,12 +627,13 @@ plotb<-ggplot(data_means, aes(as.factor(Day),meanbac, fill=Treatment))+
                 width=0.2, position=position_dodge(.9))+
   facet_wrap(~Trial, scales="free", 
              labeller = as_labeller(c("01"="Trial 1", "02"="Trial 2", "03"="Trial 3")))+
-  labs(y="Normalized Percent Abundance \nof Bacillus Reads", x=NULL)+
+  labs(y="Normalized Percent Abundance \nof Bacillales Reads", x=NULL)+
   scale_fill_manual(values=c("light blue", "dark red"))+
   theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),strip.text = element_text(size = 14), 
         axis.text = element_text(size = 10), 
         axis.title = element_text(size = 10),legend.position = "none")+
   scale_y_continuous(labels = scales::percent_format(accuracy=.01))+
+  scale_x_discrete(labels=c("01"="1", "05"="5","08"="8","09"="9","12"="12"))+
   ggtitle("Relative Bacillales Adundance")
 
 g_legend<-function(a.gplot){
@@ -661,7 +663,7 @@ cowplot::plot_grid(abplots, legendabund, nrow=2, rel_heights = c(8,1))
 
 # Figure 5. Trial 1 Vibrionales Relative Read Abundances and Diversity
 
-This figure will plot the relative percent abundance of Vibrionales in each group, and the inter-Vibrionales diversity. We'll use the order data already imported, then import a Vibrio biom file to calculate the Vibrio diversity per sample.
+This figure will plot the inter-Vibrionales diversity,the relative percent abundance of Vibrionales in each group, and the culturable Vibrio counts. We'll use the order data already imported, then import a Vibrio biom file to calculate the Vibrio diversity per sample.
 
 First, let's plot the percent number of Vibrionales reads per group.
 
@@ -688,13 +690,14 @@ plotv<-ggplot(trial1_vibrio_means, aes(as.factor(Day),meanvib, fill=Treatment))+
   geom_errorbar(aes(ymin=pmax(meanvib-stdevvib,0), ymax=meanvib+stdevvib), 
                 width=0.2, position=position_dodge(.9))+
   facet_wrap(~Type, scales="free")+
-  labs(y="Normalized Percent Abundance \nof Vibrionales Reads", x="Day")+
+  labs(y="Normalized Percent Abundance \nof Vibrionales Reads", x=NULL)+
   scale_fill_manual(values=c("light blue", "dark red"))+
-  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),strip.text = element_text(size = 14), 
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"),strip.text = element_text(size = 12), 
         axis.text = element_text(size = 10),
         axis.title = element_text(size = 10),legend.position = "none")+
-  scale_y_continuous(labels = scales::percent_format(accuracy=.01))+
-  ggtitle("Relative Vibrionales Adundance per Sample Type in Trial 1")+
+  scale_y_continuous(labels = scales::percent_format(accuracy=.1))+
+  scale_x_discrete(labels=c("01"="1", "05"="5","12"="12"))+
+  ggtitle("Relative Vibrionales Adundance")+
   geom_blank(aes(y = y_max))
 
 
@@ -714,12 +717,44 @@ diversev<- ggplot(meta_table_t1, aes(as.factor(Day),diversity$Simpson))+
   facet_wrap(~Type, scales="free")+
   labs(y="Simpson's Diversity Index ", x=NULL)+
   scale_fill_manual(values=c("light blue", "dark red"))+
-  theme(strip.text = element_text(size = 14), axis.text = element_text(size = 10),
+  theme(strip.text = element_text(size = 12), axis.text = element_text(size = 10),
         axis.title = element_text(size = 12),legend.position = "none")+
+  scale_x_discrete(labels=c("01"="1", "05"="5","12"="12"))+
   scale_y_continuous(limits=c(0,0.8))+
   ggtitle("Vibrionales Simpson's Diversity")
 
 ```
+
+
+Lastly, we'll bring in the Vibrio plate count data.
+
+```{r vibrioplatecounts}
+
+dataall<-read.xlsx("Oceano_Bacillus_Vibrio_TotalReads.xlsx", sheet="edit")
+datatrial1<-filter(dataall,Trial==1)
+
+grouped_data1 <- group_by(datatrial1, Type, Day, Treatment)
+data_means1 <- summarise(grouped_data1,
+                        meanvibc = mean(VibrioColonyCounts, na.rm=TRUE), 
+                        stdevvibc = sd(VibrioColonyCounts, na.rm=TRUE))
+data_means1$y_max<-(data_means1$meanvibc*1.5)
+
+
+countv<-ggplot(data_means1, aes(as.factor(Day),meanvibc, fill=Treatment))+
+  geom_bar(stat="identity", aes(fill=Treatment), position="dodge")+
+  geom_errorbar(aes(ymin=pmax(meanvibc-stdevvibc,1), ymax=meanvibc+stdevvibc), width=0.2, position=position_dodge(.9))+
+  facet_wrap(~Type, scales="free")+
+  labs(y="Vibrio (CFU/ml)", x="Day")+scale_fill_manual(values=c("light blue", "dark red"))+
+  theme(strip.text = element_text(size = 12), 
+        axis.text = element_text(size = 10),axis.title = element_text(size = 12),legend.position = "none")+
+  scale_x_discrete(labels=c("01"="1", "05"="5","12"="12"))+
+  geom_blank(aes(y = y_max))+
+  ggtitle("Culturable Vibrio Plate Counts")
+
+```
+
+
+
 
 And then we plot them together:
 
