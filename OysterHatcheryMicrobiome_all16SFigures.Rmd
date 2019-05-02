@@ -586,7 +586,7 @@ allwaterorder<-as.data.frame(c(meta_table_wo, abund_table_wo))
 allwaterorder$Sample<-allwaterorder$taxa
 
 # group data and calculate means of bacillales, oceanospirillales, vibrionales
-grouped_orderdata <- plyr::group_by(allwaterorder, Trial, Day, Treatment)
+grouped_orderdata <- group_by(allwaterorder, Trial, Day, Treatment)
 data_means <- dplyr::summarise(grouped_orderdata,
                          meanoc = mean(Bacteria.Proteobacteria.Gammaproteobacteria.Oceanospirillales, na.rm=TRUE), 
                          stdevoc = sd(Bacteria.Proteobacteria.Gammaproteobacteria.Oceanospirillales, na.rm=TRUE),
