@@ -586,8 +586,8 @@ allwaterorder<-as.data.frame(c(meta_table_wo, abund_table_wo))
 allwaterorder$Sample<-allwaterorder$taxa
 
 # group data and calculate means of bacillales, oceanospirillales, vibrionales
-grouped_orderdata <- group_by(allwaterorder, Trial, Day, Treatment)
-data_means <- summarise(grouped_orderdata,
+grouped_orderdata <- plyr::group_by(allwaterorder, Trial, Day, Treatment)
+data_means <- dplyr::summarise(grouped_orderdata,
                          meanoc = mean(Bacteria.Proteobacteria.Gammaproteobacteria.Oceanospirillales, na.rm=TRUE), 
                          stdevoc = sd(Bacteria.Proteobacteria.Gammaproteobacteria.Oceanospirillales, na.rm=TRUE),
                          meanbac = mean(Bacteria.Firmicutes.Bacilli.Bacillales, na.rm=TRUE),
@@ -677,7 +677,7 @@ trial1order$Sample<-trial1order$taxa
 
 # group and calculate means of vibrionales
 grouped_trial1 <- group_by(trial1order, Type, Day, Treatment)
-trial1_vibrio_means <- summarise(grouped_trial1,
+trial1_vibrio_means <- dplyr::summarise(grouped_trial1,
                          meanvib = mean(Bacteria.Proteobacteria.Gammaproteobacteria.Vibrionales, na.rm=TRUE), 
                          stdevvib = sd(Bacteria.Proteobacteria.Gammaproteobacteria.Vibrionales, na.rm=TRUE))
 
@@ -730,11 +730,10 @@ Lastly, we'll bring in the Vibrio plate count data.
 
 ```{r vibrioplatecounts}
 
-dataall<-read.xlsx("Oceano_Bacillus_Vibrio_TotalReads.xlsx", sheet="edit")
-datatrial1<-filter(dataall,Trial==1)
+datavibcounts<-read.xlsx("OysterHatcheryMicrobiome_orderdata.xlsx",sheet="VibrioCounts", rowNames = TRUE)
 
-grouped_data1 <- group_by(datatrial1, Type, Day, Treatment)
-data_means1 <- summarise(grouped_data1,
+grouped_data1 <- group_by(datavibcounts, Type, Day, Treatment)
+data_means1 <- dplyr::summarise(grouped_data1,
                         meanvibc = mean(VibrioColonyCounts, na.rm=TRUE), 
                         stdevvibc = sd(VibrioColonyCounts, na.rm=TRUE))
 data_means1$y_max<-(data_means1$meanvibc*1.5)
